@@ -12,7 +12,7 @@
   (lambda (input)
     (let ((in (coerce input 'list)))
     (cond ((funcall predicate (first in) sym) (make-result :parsed (first in) :remaining (rest in)))
-          (t '())))))
+          (t (make-result :parsed nil :remaining (rest in)))))))
 
 (defun parser-fail ()
   "Enforce failure."
@@ -28,6 +28,14 @@
 
 (funcall parser-a "hello")
 
+(defun parser-join (f)
+  (lambda (parser)
+    (funcall f (result-parsed ))))
+
+(defun sequential (p symbols) 
+  "Return a parser for all p symbols provided."
+  (map 'list ))
+
 ;; Note this implementation of applicative is currently specific
 ;; to the parsing combinator structure.
 (defun applicative (fs xs) 
@@ -37,25 +45,32 @@
                  (interior (rest gs) (list (result-remaining (funcall (first gs) (first ys)))) (append (map 'list (first gs) ys) r))))) 
     (reverse (interior fs xs nil))))
 
-(defun sequential (&rest parsers)
+(defun partial (f &rest args)
+  (lambda (&rest args1)
+    (apply f (append args args1))))
+
+(defun sequential (p symbols)
   "Use an 'applicative interface' to combine parsers."
-  (lambda (x) 
-    (applicative parsers x)))
+  (let ((parsers (map 'list (partial #'gen-parser p) symbols)))
+    (lambda (input) 
+      (applicative parsers input))))
 
 (defun alternative (fs xs) 
   (labels ((interior (gs ys r) 
-             (if (null gs)
-                 r
-                 (interior (rest gs) ys (append (map 'list (first gs) ys) r))))) 
+             (cond ((null gs) r)
+                   ((null (result-parsed (funcall (first gs) (first ys)))) (interior (rest gs) ys r))
+                   (t (interior gs (list (result-remaining (funcall (first gs) (first ys)))) (append (map 'list (first gs) ys) r))))))
     (reverse (interior fs xs nil))))
 
-(defun choice (&rest parsers)
+(defun choice (p symbols)
   "Prove a choice between parsing alternatives."
-  (lambda (x)
-    (alternative parsers x)))
+  (let ((parsers (map 'list (partial #'gen-parser p) symbols)))
+    (lambda (x)
+     (alternative parsers x))))
 
-(funcall (applicative-combine parser-a parser-a (parser-return #\b)) '("hhllo"))
-(funcall (choice-combine parser-a parser-a) '("hhllo"))
+(funcall (sequential #'char= '(#\h #\e #\l)) '("hello"))
+(funcall (applicative-combine parser-a parser-a (gen-parser #\l)) '("hhllo"))
+(funcall (choice #'char= '(#\h #\e #\l)) '("hello"))
 
 (defun stream-to-list () 
   "Convert a stream to a list."
