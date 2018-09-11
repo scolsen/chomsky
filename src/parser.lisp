@@ -33,10 +33,7 @@
   (lambda (input) 
     (make-parser-result :parsed nil :remaining input)))
 
-;;; example output 
-;;; (#S(:parsed, :remaining),#S(:parsed, :remaining),(remaining))
-
-(defun apply-to-nth (functions items)
+(defun apply-to-first (functions items)
   "Apply the first function in function to the first item."
   (funcall (first functions) (first items)))
 
@@ -49,21 +46,25 @@
                      (interior (rest parsers*) (list (parser-result-remaining (funcall (first parsers*) (first tokens*)))) (append (map 'list (first parsers*) tokens*) result))))) 
       (interior parsers tokens nil))))
 
-(defun alternative (parsers tokens)
+(defun alternative (parsers)
   "Alternative combination of parsers."
-  (labels ((interior (parsers* tokens* result) 
-             (cond ((null parsers*) result)
+  (lambda (tokens) 
+   (labels ((interior (parsers* tokens* result) 
+             (cond ((null parsers*) (make-parser-result :parsed (reverse result) :remaining (parser-result-remaining (first result))))
                    ((null (parser-result-parsed (funcall (first parsers*) (first tokens*)))) (interior (rest parsers*) tokens* result))
                    (t (interior parsers* (list (parser-result-remaining (funcall (first parsers*) (first tokens*)))) (append (map 'list (first parsers*) tokens*) result))))))
-    (reverse (interior parsers tokens nil))))
+    (interior parsers tokens nil))))
 
 (defun parser-compose (parser parser*) 
   (lambda (input)
     (let ((first-result (funcall parser* input)) 
           (second-result (funcall parser (list (parser-result-remaining (funcall parser* input))))))
-      (list first-result second-result))))
+      (parser-join (parser-result-parsed (make-parser-result :parsed (list first-result second-result) :remaining (parser-result-remaining second-result)))))))
+
+(defun parser-join (parser-results)
+  (make-parser-result :parsed (reduce #'append (map 'list #'(lambda (x) (map 'list #'parser-result-parsed (parser-result-parsed x))) parser-results)) 
+                      :remaining (parser-result-remaining (first (last parser-results)))))
 
 (funcall (applicative (gen-parsers #'char= '(#\l #\o))) '("hello"))
 (funcall (parser-compose (applicative (gen-parsers #'char= '(#\l #\o))) (applicative (gen-parsers #'char= '(#\h #\e #\l)))) '("hello"))
-(funcall (alternative #'char= '(#\h #\e #\l)) '("hello"))
-(funcall (parser-join (sequential #'char= '(#\h #\e #\l)) (choice #'char= '(#\o #\l))))
+(funcall (alternative (gen-parsers #'char= '(#\h #\e #\l))) '("hello"))
