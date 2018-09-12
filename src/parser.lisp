@@ -1,52 +1,65 @@
-(defpackage chomsky)
+(in-package :cl-user)
+(defpackage :chomsky.parser
+  (:use
+    :cl)
+  (:export
+    :parser-result
+    :make-parser-result
+    :parser-result-remaining
+    :parser-result-parsed
+    :parser-return
+    :parser-bind
+    :parser-fail
+    :parser-join
+    :gen-parser
+    :gen-parsers))
 
-;TODO: Factor out list conversion to a separate function.
+(in-package :chomsky.parser)
 
-(defstruct (parser-result)
+(defstruct (parser-result (:constructor make-parser-result (parsed remaining)))
   "A parser parser-result. Parsed and remaining contents."
   parsed 
-  remaining)
+  remaining
+  )
+
+(defun lift (h f g)
+  (lambda (x)
+    (funcall h (funcall f x) (funcall g x))))
 
 (defun partial (f &rest args)
   (lambda (&rest args1)
     (apply f (append args args1))))
 
-(defgeneric consume (f parse-result)
-    (:documentation "Consume an element of some structure for parsing.")
-    (:method ((f function)(parse-result parser-result))
-      (funcall f (parser-result-remaining parse-result))))
- 
-(defgeneric next (f parse-result)
-  (:documentation "Access the next item of a parser.")
-  (:method ((f function) (parse-result parser-result))
-    (funcall f (parser-result-remaining parse-result))))
+(defun compose (f g) 
+  (lambda(x)
+      (funcall f (funcall g x))))
 
-(defun gen-parser (f g predicate token) 
-  "Generate a parser using a consumer function, progression function, predicate and token."
-  (lambda (input)
-    (cond ((null (consume f input)) (make-parser-result :parsed nil :remaining nil))
-          ((funcall predicate (consume f input) token) (make-parser-result :parsed (consume f input) :remaining (next g input)))
-          (t (make-parser-result :parsed nil :remaining (next g input))))))
+(defun apply-to-remaining (f) 
+  (lambda (parser-result)
+    (funcall (compose f #'parser-result-remaining) parser-result)))
 
-(defun gen-parsers (f g predicate tokens)
-  "Generate parsers using the same predicate for a list of tokens."
-  (map 'list (partial #'gen-parser f g predicate) tokens))
+(defun parser-return (x)
+  (funcall (lift #'make-parser-result (constantly nil) (constantly x)) nil))
 
-(defun parser-return (constant)
-  "Lift some input into a parser.
-   This can be used to initialize an applicative sequence of parsers."
-  (lambda (input)
-    (make-parser-result :parsed constant :remaining input)))
+(defun parser-bind (f g)
+  (lift #'make-parser-result (apply-to-remaining f) (apply-to-remaining g)))
 
 (defun parser-fail ()
-  "Enforce a parser failure."
-  (lambda (input) 
-    (make-parser-result :parsed nil :remaining input)))
+  (funcall (lift #'make-parser-result (constantly nil) (constantly nil)) nil))
 
-;; not technically a 'join' on parsers, but on lists.
 (defun parser-join (parser-result)
   (if (listp (parser-result-parsed parser-result))
-    (make-parser-result :parsed (map 'list #'parser-result-parsed (parser-result-parsed parser-result))
-                        :remaining (parser-result-remaining parser-result))
-    (make-parser-result :parsed (parser-result-parsed parser-result)
-                        :remaining (parser-result-remaining parser-result))))
+    (make-parser-result (map 'list #'parser-result-parsed (parser-result-parsed parser-result))
+                        (parser-result-remaining parser-result))
+    (make-parser-result (parser-result-parsed parser-result)
+                        (parser-result-remaining parser-result))))
+
+(defun gen-parser (f g predicate token)
+  (lambda (parser-result)
+    (let ((bound (parser-bind f g)))
+      (cond ((null (parser-result-remaining parser-result)) parser-result)
+            ((funcall predicate token (funcall f (parser-result-remaining parser-result))) (funcall bound parser-result))
+            (t (parser-fail))))))
+
+(defun gen-parsers (f g predicate tokens)
+  (map 'list (partial #'gen-parser f g predicate) tokens))
