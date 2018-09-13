@@ -40,5 +40,5 @@
                    (t (interior parsers* 
                                 (funcall (first parsers*) tokens*) 
                                 (pending-result (first parsers*) tokens* result))))))
-    (interior parsers tokens (parser-result-parsed tokens)))))
+    (interior parsers tokens (chomsky.parser:parser-result-parsed tokens)))))
 
